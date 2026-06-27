@@ -1,0 +1,28 @@
+{
+  "name": "@chatapp-ngomna/shared",
+  "version": "1.0.0",
+  "description": "Modules partagés pour l'application de chat CENADI",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "private": false,
+  "keywords": [
+    "redis",
+    "resilience",
+    "streams",
+    "chat"
+  ],
+  "author": "CENADI",
+  "license": "ISC",
+  "dependencies": {
+    "redis": "^5.10.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./redis": "./redis/index.js",
+    "./redis/RedisFactory": "./redis/RedisFactory.js",
+    "./redis/RedisManager": "./redis/RedisManager.js",
+    "./resilience": "./resilience/index.js",
+    "./resilience/CircuitBreaker": "./resilience/CircuitBreaker.js",
+    "./resilience/StreamManager": "./resilience/StreamManager.js"
+  }
+}

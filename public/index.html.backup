@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat Service Test</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="chat-container">
+      <div class="chat-sidebar">
+        <div class="current-user">
+          <div class="user-info">
+            <h3 id="user-name"></h3>
+            <span id="user-status">En ligne</span>
+          </div>
+        </div>
+        <hr class="divider" />
+        <h2>Conversations</h2>
+        <ul id="conversation-list">
+          <!-- Les conversations s'afficheront ici -->
+        </ul>
+        <button id="contacts-button">Voir les contacts</button>
+      </div>
+      <div class="chat-main">
+        <div class="chat-header">
+          <div class="contact-info">
+            <div class="contact-details">
+              <h2 id="current-contact">Sélectionnez une conversation</h2>
+              <p class="last-seen">dernière vue récemment</p>
+            </div>
+          </div>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+          <!-- Messages s'afficheront ici -->
+        </div>
+        <div class="chat-input">
+          <input
+            type="text"
+            id="message-input"
+            placeholder="Tapez votre message..."
+          />
+          <button id="send-button">Envoyer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fenêtre modale pour les contacts -->
+    <div id="contacts-modal" class="modal">
+      <div class="modal-content">
+        <span id="close-modal" class="close">&times;</span>
+        <h2>Liste des contacts</h2>
+        <ul id="contacts-list">
+          <!-- Les contacts s'afficheront ici -->
+        </ul>
+      </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+      const getCookie = (name) => {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+
+        if (name === "user") {
+          // Si le cookie est "user", on le décode
+          if (parts.length === 2)
+            return JSON.parse(
+              decodeURIComponent(parts.pop().split(";").shift())
+            );
+        } else if (parts.length === 2) return parts.pop().split(";").shift();
+      };
+
+      const token = getCookie("token");
+      const user = getCookie("user");
+      if (user) {
+        // Afficher le nom complet
+        document.getElementById(
+          "user-name"
+        ).textContent = `${user.nom} ${user.prenom}`;
+      }
+      console.log("user:", user);
+      const socket = io("http://localhost:8003", {
+        auth: {
+          token, // Envoyer le token lors de la connexion
+        },
+      }); // Remplacez par l'URL de votre chat-service
+      const userId = user.id; // ID de l'utilisateur actuel
+      let currentReceiverId = null;
+      let activeConversationId = null;
+
+      // Rejoindre une salle
+      socket.emit("join", userId);
+
+      // Écouter les utilisateurs en ligne
+      socket.on("onlineUsers", (users) => {
+        console.log("Utilisateurs en ligne:", users);
+        // Mettre à jour votre interface utilisateur
+      });
+
+      // Écouter les salons créés
+      socket.on("createdRooms", (rooms) => {
+        console.log("Salons créés:", rooms);
+        // Mettre à jour votre interface utilisateur
+      });
+
+      // Obtenir les statistiques
+      socket.emit("getStats");
+      socket.on("stats", (stats) => {
+        console.log("Statistiques:", stats);
+        // Afficher dans votre interface
+      });
+
+      // Charger les contacts dans la fenêtre modale
+      const loadContacts = async () => {
+        try {
+          const response = await fetch("http://localhost:8002/users"); // URL de l'API user-service
+          const users = await response.json();
+
+          const contactsList = document.getElementById("contacts-list");
+          contactsList.innerHTML = ""; // Réinitialiser la liste
+
+          users.forEach((user) => {
+            const li = document.createElement("li");
+            li.textContent = `${user.nom} ${user.prenom}`;
+            li.dataset.id = user.id;
+
+            li.addEventListener("click", () => {
+              // Mettre à jour l'en-tête avec le contact sélectionné
+              document.getElementById(
+                "current-contact"
+              ).textContent = `${user.nom} ${user.prenom}`;
+              currentReceiverId = user.id;
+
+              // Fermer la fenêtre modale
+              closeModal();
+            });
+
+            contactsList.appendChild(li);
+          });
+        } catch (error) {
+          console.error("Erreur lors du chargement des utilisateurs :", error);
+        }
+      };
+
+      // Afficher la fenêtre modale
+      const openModal = () => {
+        document.getElementById("contacts-modal").style.display = "block";
+        loadContacts(); // Charger les contacts
+      };
+
+      // Fermer la fenêtre modale
+      const closeModal = () => {
+        document.getElementById("contacts-modal").style.display = "none";
+      };
+
+      // Ajouter les gestionnaires d'événements
+      document
+        .getElementById("contacts-button")
+        .addEventListener("click", openModal);
+      document
+        .getElementById("close-modal")
+        .addEventListener("click", closeModal);
+
+      // Envoyer un message
+      document.getElementById("send-button").addEventListener("click", () => {
+        const messageInput = document.getElementById("message-input");
+        const message = messageInput.value;
+
+        console.log("Message à envoyer :", message);
+
+        if (message.trim() !== "" && currentReceiverId) {
+          socket.emit("privateMessage", {
+            senderId: userId,
+            receiverId: currentReceiverId,
+            content: message,
+          });
+
+          messageInput.value = "";
+        }
+      });
+
+      // Ajouter cette fonction avant les événements socket
+      const loadMessages = async (conversationId) => {
+        try {
+          activeConversationId = conversationId; // Définir la conversation active
+
+          // Nettoyer la zone des messages
+          const chatMessages = document.getElementById("chat-messages");
+          chatMessages.innerHTML = "";
+
+          // Marquer tous les messages comme lus
+          socket.emit("markRead", conversationId);
+
+          // Émettre un événement pour demander les messages
+          socket.emit("getMessages", {
+            conversationId: conversationId,
+          });
+        } catch (error) {
+          console.error("Erreur lors du chargement des messages:", error);
+        }
+      };
+
+      // Recevoir un message
+      socket.on("newMessage", (message) => {
+        console.log("Message reçu:", message);
+
+        // Marquer le message comme livré dès réception
+        if (message.senderId !== userId) {
+          socket.emit("markDelivered", message.conversationId);
+
+          // Si on est dans la conversation, marquer comme lu immédiatement
+          if (message.conversationId === activeConversationId) {
+            socket.emit("markRead", message.conversationId);
+          }
+        }
+
+        // Vérifier si nous sommes impliqués dans ce message (expéditeur ou destinataire)
+        if (
+          message.senderId === userId ||
+          message.senderId === currentReceiverId ||
+          message.receiverId === userId ||
+          message.receiverId === currentReceiverId
+        ) {
+          const chatMessages = document.getElementById("chat-messages");
+          const messageElement = document.createElement("div");
+          messageElement.classList.add("message");
+          messageElement.dataset.messageId = message._id;
+          messageElement.dataset.conversationId = message.conversationId;
+
+          // N'afficher le message que si on est dans la bonne conversation
+          if (message.conversationId === activeConversationId) {
+            if (message.senderId === userId) {
+              messageElement.classList.add("sent");
+              messageElement.innerHTML = `
+          <div class="message-content">
+            <p>${message.content}</p>
+            <div class="message-info">
+              <span class="message-time">${new Date(
+                message.createdAt
+              ).toLocaleTimeString()}</span>
+              <span class="message-status ${message.status.toLowerCase()}">${
+                message.status === "READ" || message.status === "DELIVERED"
+                  ? "✓✓"
+                  : "✓"
+              }</span>
+            </div>
+          </div>
+        `;
+            } else {
+              messageElement.classList.add("received");
+              messageElement.innerHTML = `
+          <div class="message-content">
+            <p>${message.content}</p>
+            <div class="message-info">
+              <span class="message-time">${new Date(
+                message.createdAt
+              ).toLocaleTimeString()}</span>
+            </div>
+          </div>
+        `;
+            }
+
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        }
+      });
+
+      // Écouter les nouvelles conversations en temps réel
+      socket.on("newConversation", (conversation) => {
+        console.log("Nouvelle conversation :", conversation);
+        const conversationList = document.getElementById("conversation-list");
+
+        const li = document.createElement("li");
+        li.textContent = `${conversation.nom} ${conversation.prenom}`;
+        li.dataset.id = conversation.id;
+
+        li.addEventListener("click", () => {
+          document.getElementById(
+            "current-contact"
+          ).textContent = `${conversation.nom} ${conversation.prenom}`;
+          currentReceiverId = conversation.id;
+        });
+
+        conversationList.appendChild(li);
+      });
+
+      // Émettre un événement pour demander les conversations
+      socket.emit("sidebar");
+
+      // Modifier l'écouteur sidebarData
+      socket.on("sidebarData", async (conversations) => {
+        const conversationList = document.getElementById("conversation-list");
+        conversationList.innerHTML = "";
+
+        console.log("Conversations reçues :", conversations);
+
+        conversations.forEach((conversation) => {
+          console.log("MarkDelivered");
+          socket.emit("markDelivered", conversation._id);
+          const otherParticipant = conversation.participants.find(
+            (p) => p.id !== userId
+          );
+
+          const li = document.createElement("li");
+          li.classList.add("conversation-item");
+
+          li.innerHTML = `
+      <div class="conversation-info">
+        <div class="participant-name">${otherParticipant.nom} ${
+            otherParticipant.prenom
+          }</div>
+        ${
+          conversation.lastMessage
+            ? `<div class="last-message">${conversation.lastMessage.content}</div>`
+            : ""
+        }
+      </div>
+      ${
+        conversation.unreadCount > 0
+          ? `<span class="unread-count">${conversation.unreadCount}</span>`
+          : ""
+      }
+    `;
+
+          li.dataset.id = conversation._id;
+          li.addEventListener("click", () => {
+            currentReceiverId = otherParticipant.id;
+            document.getElementById(
+              "current-contact"
+            ).textContent = `${otherParticipant.nom} ${otherParticipant.prenom}`;
+            loadMessages(conversation._id);
+          });
+
+          conversationList.appendChild(li);
+        });
+      });
+
+      // Ajouter cet écouteur après les autres événements socket
+      socket.on("messagesLoaded", (messages) => {
+        console.log("Messages reçus:", messages);
+        const chatMessages = document.getElementById("chat-messages");
+        chatMessages.innerHTML = ""; // Nettoyer la zone des messages
+
+        messages.forEach((message) => {
+          const messageElement = document.createElement("div");
+          messageElement.classList.add("message");
+          messageElement.dataset.conversationId = message.conversationId; // Ajouter l'ID de conversation
+
+          // Ajouter une classe différente selon l'expéditeur
+          if (message.senderId === userId) {
+            messageElement.classList.add("sent");
+            // Ajouter le contenu du message avec le statut
+            messageElement.innerHTML = `
+      <div class="message-content">
+        <p>${message.content}</p>
+        <div class="message-info">
+          <span class="message-time">${new Date(
+            message.createdAt
+          ).toLocaleTimeString()}</span>
+          <span class="message-status ${message.status.toLowerCase()}">${
+              message.status === "READ" || message.status === "DELIVERED"
+                ? "✓✓"
+                : "✓"
+            }</span>
+        </div>
+      </div>
+    `;
+          } else {
+            messageElement.classList.add("received");
+            // Ajouter le contenu du message avec le statut
+            messageElement.innerHTML = `
+      <div class="message-content">
+        <p>${message.content}</p>
+        <div class="message-info">
+          <span class="message-time">${new Date(
+            message.createdAt
+          ).toLocaleTimeString()}</span>
+          
+        </div>
+      </div>
+    `;
+          }
+
+          chatMessages.appendChild(messageElement);
+        });
+
+        // Faire défiler jusqu'au dernier message
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      });
+
+      // Écouter les changements de statut des messages
+      socket.on(
+        "messagesDelivered",
+        ({ conversationId, receiverId, messagesInfos }) => {
+          console.log(
+            `Messages livrés pour la conversation ${conversationId} : ${messagesInfos}`
+          );
+          // Mettre à jour l'interface pour montrer que les messages ont été livrés
+          updateMessagesStatus(conversationId, "DELIVERED", messagesInfos);
+        }
+      );
+
+      socket.on(
+        "messagesRead",
+        ({ conversationId, receiverId, messagesInfos }) => {
+          console.log(
+            `Messages lus pour la conversation ${conversationId} : ${messagesInfos}`
+          );
+          // Mettre à jour le statut des messages envoyés
+          updateMessagesStatus(conversationId, "READ", messagesInfos);
+        }
+      );
+
+      socket.on("conversationUpdated", (conversation) => {
+        // Mettre à jour la conversation dans la sidebar
+        console.log("Conversation mise à jour:", conversation);
+        updateConversationInSidebar(conversation);
+      });
+
+      // Optimisation de la fonction updateMessagesStatus
+      function updateMessagesStatus(conversationId, status, messagesInfos) {
+        const statusIcon = "✓✓";
+
+        // Sélectionner uniquement les messages spécifiés
+        messagesInfos.forEach((messageInfo) => {
+          const message = document.querySelector(
+            `.message.sent[data-message-id="${messageInfo._id}"][data-conversation-id="${conversationId}"]`
+          );
+
+          if (message) {
+            const statusElement = message.querySelector(".message-status");
+            const currentStatus = statusElement?.className.split(" ")[1]; // récupérer le statut actuel
+
+            // Ne mettre à jour que si le nouveau statut est "supérieur" à l'ancien
+            if (shouldUpdateStatus(currentStatus, status)) {
+              if (statusElement) {
+                statusElement.textContent = statusIcon;
+                statusElement.className = `message-status ${status.toLowerCase()}`;
+              }
+            }
+          }
+        });
+      }
+
+      // Optimisation de updateConversationInSidebar
+      function updateConversationInSidebar(conversation) {
+        if (!conversation || !conversation.participants) return;
+
+        const conversationList = document.getElementById("conversation-list");
+        const otherParticipant = conversation.participants.find(
+          (p) => p.id !== userId
+        );
+
+        if (!otherParticipant) return;
+
+        let conversationElement = conversationList.querySelector(
+          `[data-id="${conversation._id}"]`
+        );
+
+        // Ne pas afficher le compteur non lu si c'est la conversation active
+        const showUnreadCount =
+          conversation.unreadCount > 0 &&
+          conversation._id !== activeConversationId;
+
+        const conversationHTML = `
+    <div class="conversation-info">
+      <div class="participant-name">${otherParticipant.nom} ${
+          otherParticipant.prenom
+        }</div>
+      ${
+        conversation.lastMessage
+          ? `<div class="last-message">${conversation.lastMessage.content}</div>`
+          : ""
+      }
+    </div>
+    ${
+      showUnreadCount
+        ? `<span class="unread-count">${conversation.unreadCount}</span>`
+        : ""
+    }
+  `;
+
+        if (conversationElement) {
+          conversationElement.innerHTML = conversationHTML;
+        } else {
+          conversationElement = document.createElement("li");
+          conversationElement.classList.add("conversation-item");
+          conversationElement.dataset.id = conversation._id;
+          conversationElement.innerHTML = conversationHTML;
+          conversationElement.addEventListener("click", () => {
+            currentReceiverId = otherParticipant.id;
+            document.getElementById(
+              "current-contact"
+            ).textContent = `${otherParticipant.nom} ${otherParticipant.prenom}`;
+            loadMessages(conversation._id);
+          });
+          conversationList.insertBefore(
+            conversationElement,
+            conversationList.firstChild
+          );
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,448 @@
+// Imports essentiels
+const express = require("express");
+const { createServer } = require("http");
+const cors = require("cors");
+const path = require("path");
+const { Server } = require("socket.io");
+const { createAdapter } = require("@socket.io/redis-adapter");
+
+// Configuration
+require("dotenv").config();
+
+// Connexions infrastructure
+const { connectDB } = require("./infrastructure/mongodb/connection");
+const redisConfig = require("./infrastructure/redis/connection");
+const kafkaConfig = require("./infrastructure/kafka/connection");
+
+// Repositories
+const MongoMessageRepository = require("./infrastructure/repositories/MongoMessageRepository");
+const MongoConversationRepository = require("./infrastructure/repositories/MongoConversationRepository");
+const MongoFileRepository = require("./infrastructure/repositories/MongoFileRepository");
+
+// Use Cases
+const SendMessage = require("./application/use-cases/SendMessage");
+const GetMessages = require("./application/use-cases/GetMessages");
+const UpdateMessageStatus = require("./application/use-cases/UpdateMessageStatus");
+const GetConversations = require("./application/use-cases/GetConversations");
+const GetConversation = require("./application/use-cases/GetConversation");
+const UploadFile = require("./application/use-cases/UploadFile");
+const GetFile = require("./application/use-cases/GetFile");
+
+// Controllers
+const ConversationController = require("./application/controllers/ConversationController");
+const MessageController = require("./application/controllers/MessageController");
+const FileController = require("./application/controllers/FileController");
+const HealthController = require("./application/controllers/HealthController");
+
+// Routes
+const createConversationRoutes = require("./interfaces/http/routes/conversationRoutes");
+const createMessageRoutes = require("./interfaces/http/routes/messageRoutes");
+const createFileRoutes = require("./interfaces/http/routes/fileRoutes");
+const createHealthRoutes = require("./interfaces/http/routes/healthRoutes");
+
+// Kafka Producers
+const MessageProducer = require("./infrastructure/kafka/producers/MessageProducer");
+const FileProducer = require("./infrastructure/kafka/producers/FileProducer");
+
+// WebSocket Handler - VOTRE HANDLER EXISTANT
+const ChatHandler = require("./application/websocket/chatHandler");
+
+// Middleware
+const { rateLimitMiddleware } = require("./interfaces/http/middleware");
+
+const app = express();
+const server = createServer(app);
+
+const startServer = async () => {
+  try {
+    console.log("🚀 Démarrage du Chat-File Service...");
+
+    // ===============================
+    // 1. CONNEXIONS INFRASTRUCTURE
+    // ===============================
+
+    // MongoDB
+    await connectDB();
+    console.log("✅ MongoDB connecté");
+
+    // Tentative de connexion à Redis avec retry
+    let redisClient = null;
+    let redisStatus = "disconnected";
+    try {
+      const redisConnected = await redisConfig.connect();
+      if (redisConnected) {
+        redisClient = redisConfig.getClient();
+        redisStatus = "connected";
+        console.log("✅ Redis connecté");
+      }
+    } catch (error) {
+      console.log("⚠️ Redis non disponible, mode développement activé");
+    }
+
+    // Tentative de connexion à Kafka avec retry
+    let kafkaProducers = null;
+    let kafkaConsumers = null;
+    let kafkaStatus = "disconnected";
+    try {
+      const kafkaConnected = await kafkaConfig.connect();
+      if (kafkaConnected) {
+        kafkaProducers = {
+          messageProducer: new MessageProducer(kafkaConfig.getProducer()),
+          fileProducer: new FileProducer(kafkaConfig.getProducer()),
+        };
+        kafkaStatus = "connected";
+        console.log("✅ Kafka connecté");
+      }
+    } catch (error) {
+      console.log("⚠️ Kafka non disponible, mode développement activé");
+    }
+
+    // ===============================
+    // 2. CONFIGURATION SOCKET.IO
+    // ===============================
+    const io = new Server(server, {
+      cors: {
+        origin: [
+          "http://localhost:3000",
+          "http://localhost:8000",
+          "http://localhost:8001",
+          "http://localhost:8002",
+          "http://localhost:8003",
+        ],
+        methods: ["GET", "POST"],
+        credentials: true,
+      },
+      transports: ["websocket", "polling"],
+      allowEIO3: true,
+    });
+
+    // Utiliser Redis adapter si disponible
+    if (redisClient) {
+      try {
+        io.adapter(
+          createAdapter(redisConfig.getPubClient(), redisConfig.getSubClient())
+        );
+        console.log("✅ Redis adapter configuré");
+      } catch (error) {
+        console.warn("⚠️ Erreur configuration Redis adapter:", error.message);
+      }
+    }
+
+    // ===============================
+    // 3. MIDDLEWARE EXPRESS
+    // ===============================
+    app.use(
+      cors({
+        origin: [
+          "http://localhost:3000",
+          "http://localhost:8000",
+          "http://localhost:8001",
+          "http://localhost:8002",
+          "http://localhost:8003",
+        ],
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+      })
+    );
+
+    app.use(express.json({ limit: "10mb" }));
+    app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+    // Configuration Redis pour les middleware
+    app.locals.redisClient = redisClient;
+
+    // Middleware globaux
+    app.use(rateLimitMiddleware.apiLimit);
+
+    // Servir les fichiers statiques
+    app.use(express.static(path.join(__dirname, "../public")));
+    app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+    // ===============================
+    // 4. INITIALISATION REPOSITORIES
+    // ===============================
+    const messageRepository = new MongoMessageRepository();
+    const conversationRepository = new MongoConversationRepository();
+    const fileRepository = new MongoFileRepository();
+
+    // ===============================
+    // 5. INITIALISATION USE CASES
+    // ===============================
+    const sendMessageUseCase = new SendMessage(
+      messageRepository,
+      conversationRepository,
+      kafkaProducers?.messageProducer || null
+    );
+
+    const getMessagesUseCase = new GetMessages(messageRepository, redisClient);
+
+    const getConversationUseCase = new GetConversation(
+      conversationRepository,
+      messageRepository,
+      redisClient
+    );
+
+    const getConversationsUseCase = new GetConversations(
+      conversationRepository,
+      messageRepository,
+      redisClient
+    );
+
+    const updateMessageStatusUseCase = new UpdateMessageStatus(
+      messageRepository,
+      conversationRepository,
+      kafkaProducers?.messageProducer || null
+    );
+
+    const uploadFileUseCase = new UploadFile(
+      fileRepository,
+      messageRepository,
+      conversationRepository,
+      kafkaProducers?.fileProducer || null
+    );
+
+    const getFileUseCase = new GetFile(
+      fileRepository,
+      kafkaProducers?.fileProducer || null,
+      redisClient
+    );
+
+    // ===============================
+    // 6. INITIALISATION CONTRÔLEURS
+    // ===============================
+    const fileController = new FileController(
+      uploadFileUseCase,
+      getFileUseCase,
+      redisClient,
+      kafkaProducers?.fileProducer || null
+    );
+
+    const messageController = new MessageController(
+      sendMessageUseCase,
+      getMessagesUseCase,
+      updateMessageStatusUseCase,
+      redisClient,
+      kafkaProducers?.messageProducer || null
+    );
+
+    const conversationController = new ConversationController(
+      getConversationsUseCase,
+      getConversationUseCase,
+      redisClient,
+      kafkaProducers?.messageProducer || null
+    );
+
+    const healthController = new HealthController(redisClient, kafkaConfig);
+
+    // ===============================
+    // 7. CONFIGURATION ROUTES HTTP
+    // ===============================
+    app.use("/files", createFileRoutes(fileController));
+    app.use("/messages", createMessageRoutes(messageController));
+    app.use(
+      "/conversations",
+      createConversationRoutes(conversationController)
+    );
+    app.use("/health", createHealthRoutes(healthController));
+
+    // ===============================
+    // 8. CONFIGURATION WEBSOCKET AVEC VOTRE CHATHANDLER
+    // ===============================
+    console.log("🔌 Configuration du gestionnaire WebSocket...");
+
+    // Utiliser directement VOTRE ChatHandler existant
+    const chatHandler = new ChatHandler(
+      io,
+      sendMessageUseCase,
+      kafkaProducers?.messageProducer || null,
+      redisClient
+    );
+
+    console.log("✅ ChatHandler configuré avec succès");
+
+    // ===============================
+    // 9. ROUTES DE SANTÉ
+    // ===============================
+    app.get("/health", async (req, res) => {
+      try {
+        const health = {
+          service: "CENADI Chat-File-Service",
+          version: "1.0.0",
+          status: "running",
+          timestamp: new Date().toISOString(),
+          serverId: process.env.SERVER_ID || "chat-file-1",
+          services: {
+            mongodb: "✅ Connecté",
+            redis: {
+              status: redisStatus,
+              details: redisClient
+                ? await redisConfig.getHealthStatus()
+                : "Non connecté",
+            },
+            kafka: {
+              status: kafkaStatus,
+              details: kafkaProducers
+                ? await kafkaConfig.getHealthStatus()
+                : "Non connecté",
+            },
+            websocket: "✅ Actif",
+          },
+          endpoints: {
+            files: "/files",
+            messages: "/messages",
+            conversations: "/conversations",
+            health: "/health",
+            interface: "/",
+          },
+          features: {
+            chat: !!messageController,
+            fileUpload: !!fileController,
+            realTimeMessages: !!kafkaProducers,
+            caching: !!redisClient,
+          },
+          connectedUsers: chatHandler.getConnectedUserCount(),
+        };
+        res.json(health);
+      } catch (error) {
+        console.error("❌ Erreur health check:", error);
+        res.status(500).json({
+          service: "CENADI Chat-File-Service",
+          status: "error",
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+
+    // Route d'information principale
+    app.get("/", (req, res) => {
+      res.json({
+        service: "CENADI Chat-File-Service",
+        version: "1.0.0",
+        status: "running",
+        timestamp: new Date().toISOString(),
+        endpoints: {
+          files: "/files",
+          messages: "/messages",
+          conversations: "/conversations",
+          health: "/health",
+        },
+        features: {
+          chat: "✅ Chat en temps réel",
+          files: "✅ Upload/Download fichiers",
+          images: "✅ Traitement d'images",
+          websocket: "✅ WebSocket activé",
+          redis: redisClient ? "✅ Redis activé" : "⚠️ Mode mémoire locale",
+          kafka: kafkaProducers ? "✅ Kafka activé" : "⚠️ Mode développement",
+        },
+      });
+    });
+
+    // ===============================
+    // 10. GESTION D'ERREURS
+    // ===============================
+
+    // Middleware de gestion d'erreurs global
+    app.use((error, req, res, next) => {
+      console.error("❌ Erreur serveur:", error);
+
+      if (res.headersSent) {
+        return next(error);
+      }
+
+      res.status(error.status || 500).json({
+        success: false,
+        message: error.message || "Erreur interne du serveur",
+        error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    // Route 404
+    app.use((req, res) => {
+      res.status(404).json({
+        success: false,
+        message: "Endpoint non trouvé",
+        path: req.path,
+        method: req.method,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    // ===============================
+    // 11. DÉMARRAGE SERVEUR
+    // ===============================
+    const PORT = process.env.CHAT_FILE_SERVICE_PORT || 8003;
+    server.listen(PORT, () => {
+      console.log(`🚀 Chat-File Service démarré sur le port ${PORT}`);
+      console.log(`🌍 Serveur ID: ${process.env.SERVER_ID || "chat-file-1"}`);
+
+      console.log("📋 Fonctionnalités disponibles:");
+      console.log("   💬 Chat en temps réel");
+      console.log("   📁 Upload/Download de fichiers");
+      console.log("   🖼️ Traitement d'images");
+      console.log("   📱 Interface web");
+
+      // Afficher le statut des services
+      console.log("\n📊 Statut des services:");
+      console.log(`   MongoDB: ✅ Connecté`);
+      console.log(
+        `   Redis:   ${redisClient ? "✅ Connecté" : "⚠️ Mode mémoire locale"}`
+      );
+      console.log(
+        `   Kafka:   ${
+          kafkaProducers ? "✅ Connecté" : "⚠️ Mode développement"
+        }`
+      );
+
+      // Afficher les liens utiles
+      console.log("\n" + "=".repeat(60));
+      console.log("🎯 LIENS RAPIDES - CHAT-FILE-SERVICE");
+      console.log("=".repeat(60));
+      console.log(`🌐 Interface Web     : http://localhost:${PORT}/`);
+      console.log(`📁 API Fichiers     : http://localhost:${PORT}/files`);
+      console.log(
+        `💬 API Messages     : http://localhost:${PORT}/messages`
+      );
+      console.log(
+        `🗣️ API Conversations: http://localhost:${PORT}/conversations`
+      );
+      console.log(`🔌 WebSocket        : ws://localhost:${PORT}`);
+      console.log(`❤️ Health Check     : http://localhost:${PORT}/health`);
+      console.log("=".repeat(60) + "\n");
+    });
+  } catch (error) {
+    console.error("❌ Erreur au démarrage:", error);
+    process.exit(1);
+  }
+};
+
+// ===============================
+// 12. GESTION FERMETURE PROPRE
+// ===============================
+process.on("SIGINT", async () => {
+  console.log("\n🛑 Arrêt du serveur...");
+  try {
+    await redisConfig.disconnect();
+    await kafkaConfig.disconnect();
+    console.log("✅ Services déconnectés proprement");
+  } catch (error) {
+    console.error("❌ Erreur lors de l'arrêt:", error);
+  }
+  process.exit(0);
+});
+
+// Gestionnaire d'erreurs non gérées
+process.on("uncaughtException", (error) => {
+  console.error("❌ Exception non gérée:", error);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ Promesse rejetée non gérée:", reason);
+  console.error("À:", promise);
+  process.exit(1);
+});
+
+startServer();

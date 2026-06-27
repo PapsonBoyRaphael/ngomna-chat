@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🔧 Testeur Socket.IO - CENADI Chat Service</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <h1>🔧 Testeur Socket.IO - CENADI Chat Service</h1>
+        <div class="connection-status" id="connectionStatus">🔴 Déconnecté</div>
+      </header>
+
+      <div class="main-content">
+        <!-- Section Authentification -->
+        <div class="section auth-section">
+          <h2>🔐 Authentification</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="userId"
+              placeholder="ID Utilisateur (ex: 3)"
+              value="3"
+            />
+            <input
+              type="text"
+              id="matricule"
+              placeholder="Matricule (ex: 559296X)"
+              value="559296X"
+            />
+            <input type="text" id="token" placeholder="Token JWT (optionnel)" />
+            <!-- ✅ Ajout receiverId -->
+            <input
+              type="text"
+              id="receiverIdAuth"
+              placeholder="ID Destinataire (optionnel)"
+              value=""
+            />
+            <!-- ✅ Ajout statut -->
+            <select id="statusAuth">
+              <option value="">-- Statut (optionnel) --</option>
+              <option value="DELIVERED">DELIVERED</option>
+              <option value="SENT">SENT</option>
+              <option value="READ">READ</option>
+            </select>
+            <button onclick="authenticate()" class="btn-primary">
+              🔑 S'authentifier
+            </button>
+          </div>
+          <div class="status" id="authStatus"></div>
+        </div>
+
+        <!-- Section Tests de Base -->
+        <div class="section test-section">
+          <h2>🧪 Tests de Base</h2>
+          <div class="button-grid">
+            <button onclick="pingTest()" class="btn-secondary">
+              🏓 Test Ping
+            </button>
+            <button onclick="getOnlineUsers()" class="btn-secondary">
+              👥 Utilisateurs en ligne
+            </button>
+            <button onclick="disconnect()" class="btn-warning">
+              🔌 Déconnecter
+            </button>
+            <button onclick="reconnect()" class="btn-success">
+              🔄 Reconnecter
+            </button>
+          </div>
+        </div>
+
+        <!-- Section Messages -->
+        <div class="section message-section">
+          <h2>💬 Test Messages</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="conversationId"
+              placeholder="ID Conversation (24 caractères hexa)"
+              value="60f7b3b3b3b3b3b3b3b3b3b6"
+            />
+            <input
+              type="text"
+              id="receiverId"
+              placeholder="ID Destinataire (REQUIS pour nouvelles conversations)"
+              value="1"
+            />
+            <textarea
+              id="messageContent"
+              placeholder="Contenu du message..."
+              rows="3"
+            >
+Message de test depuis le testeur Socket.IO 🚀</textarea
+            >
+            <select id="messageType">
+              <option value="TEXT">TEXT</option>
+              <option value="IMAGE">IMAGE</option>
+              <option value="FILE">FILE</option>
+            </select>
+            <div class="button-grid">
+              <button
+                onclick="validateMessageData() && sendMessage()"
+                class="btn-primary"
+              >
+                📤 Envoyer Message
+              </button>
+              <button onclick="generateTestIds()" class="btn-secondary">
+                🔧 Générer IDs Test
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 Pour une nouvelle conversation privée, le receiverId est
+                obligatoire
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Conversations -->
+        <div class="section conversation-section">
+          <h2>🗨️ Test Conversations</h2>
+          <div class="button-grid">
+            <button onclick="joinConversation()" class="btn-success">
+              ➕ Rejoindre Conversation
+            </button>
+            <button onclick="leaveConversation()" class="btn-warning">
+              ➖ Quitter Conversation
+            </button>
+            <button onclick="startTyping()" class="btn-secondary">
+              ⌨️ Commencer à taper
+            </button>
+            <button onclick="stopTyping()" class="btn-secondary">
+              ⏹️ Arrêter de taper
+            </button>
+          </div>
+        </div>
+
+        <!-- Section Tests Avancés -->
+        <div class="section advanced-section">
+          <h2>🔬 Tests Avancés</h2>
+          <div class="button-grid">
+            <button onclick="testInvalidData()" class="btn-danger">
+              ❌ Test Données Invalides
+            </button>
+            <button onclick="testLongMessage()" class="btn-secondary">
+              📝 Test Message Long
+            </button>
+            <button onclick="testSpecialChars()" class="btn-secondary">
+              🔤 Test Caractères Spéciaux
+            </button>
+            <button onclick="stressTest()" class="btn-warning">
+              ⚡ Test de Charge
+            </button>
+          </div>
+        </div>
+
+        <!-- ✅ AJOUTER CETTE SECTION APRÈS LA SECTION CONVERSATIONS -->
+        <div class="section message-status-section">
+          <h2>📊 Statuts de Messages</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="messageIdStatus"
+              placeholder="ID du Message (laisser vide pour utiliser le dernier envoyé)"
+              value=""
+            />
+            <div class="button-grid">
+              <button onclick="getLastMessageId()" class="btn-info">
+                🔍 Récupérer Dernier ID
+              </button>
+              <button onclick="markMessageDelivered()" class="btn-success">
+                📬 Marquer Livré
+              </button>
+              <button onclick="markMessageRead()" class="btn-success">
+                📖 Marquer Lu
+              </button>
+              <button onclick="markConversationRead()" class="btn-primary">
+                📚 Marquer Conversation Lue
+              </button>
+              <button onclick="getMessageStatus()" class="btn-secondary">
+                📊 Obtenir Statut
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                🔍 Utilisez "Récupérer Dernier ID" pour auto-remplir avec le
+                dernier message envoyé
+              </small>
+              <br />
+              <small>
+                📬 Livré = Le message est arrivé sur l'appareil du destinataire
+              </small>
+              <br />
+              <small> 📖 Lu = Le destinataire a ouvert et lu le message </small>
+              <br />
+              <small>
+                📚 Conversation Lue = Tous les messages non lus de la
+                conversation sont marqués comme lus
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Messages & Événements Reçus -->
+        <div class="section messages-display-section">
+          <h2>📨 Messages & Événements Reçus</h2>
+          <div class="messages-container">
+            <!-- Onglets pour filtrer les types de messages -->
+            <div class="message-tabs">
+              <button
+                class="tab-btn active"
+                onclick="switchMessageTab('all')"
+                id="allTab"
+              >
+                📋 Tous
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchMessageTab('messages')"
+                id="messagesTab"
+              >
+                💬 Messages
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchMessageTab('typing')"
+                id="typingTab"
+              >
+                ⌨️ Frappe
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchMessageTab('users')"
+                id="usersTab"
+              >
+                👥 Utilisateurs
+              </button>
+            </div>
+
+            <!-- Zone d'affichage des messages -->
+            <div class="messages-display" id="messagesDisplay">
+              <div class="empty-state">
+                <i class="fas fa-inbox"></i>
+                <p>Aucun message reçu</p>
+                <small>Les messages et événements apparaîtront ici</small>
+              </div>
+            </div>
+
+            <!-- Contrôles -->
+            <div class="message-controls">
+              <button onclick="clearMessages()" class="btn-clear">
+                🗑️ Vider Messages
+              </button>
+              <button
+                onclick="toggleAutoScroll()"
+                class="btn-secondary"
+                id="autoScrollBtn"
+              >
+                📜 Auto-scroll: ON
+              </button>
+              <div class="message-stats">
+                <span id="messageCount">0 messages</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Utilisateurs En Ligne -->
+        <div class="section online-users-section">
+          <h2>👥 Utilisateurs En Ligne</h2>
+          <div class="online-users-container">
+            <div class="users-grid" id="onlineUsersGrid">
+              <div class="empty-state">
+                <i class="fas fa-users"></i>
+                <p>Aucun utilisateur en ligne</p>
+                <small
+                  >Authentifiez-vous pour voir les utilisateurs connectés</small
+                >
+              </div>
+            </div>
+            <div class="users-stats">
+              <span id="onlineCount">0 utilisateurs en ligne</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Indicateurs de Frappe -->
+        <div class="section typing-indicators-section">
+          <h2>⌨️ Indicateurs de Frappe</h2>
+          <div class="typing-container">
+            <div class="typing-list" id="typingList">
+              <div class="empty-state">
+                <i class="fas fa-keyboard"></i>
+                <p>Personne n'écrit actuellement</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Upload de Fichier -->
+        <div class="section file-upload-section">
+          <h2>📁 Envoyer un Fichier</h2>
+          <form id="fileUploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+              <input type="file" id="fileInput" name="file" required />
+              <input
+                type="text"
+                id="fileConversationId"
+                placeholder="ID Conversation (optionnel)"
+              />
+              <button type="submit" class="btn-primary">
+                ⬆️ Envoyer Fichier
+              </button>
+            </div>
+            <div class="status" id="fileUploadStatus"></div>
+          </form>
+        </div>
+
+        <!-- Section Mes Fichiers -->
+        <div class="section my-files-section">
+          <h2>📁 Mes Fichiers</h2>
+          <div class="button-grid">
+            <button onclick="fetchMyFiles()" class="btn-secondary">
+              📁 Mes Fichiers
+            </button>
+          </div>
+          <div id="myFilesList"></div>
+        </div>
+
+        <!-- Section Groupes et Diffusion -->
+        <div class="section group-section">
+          <h2>👥 Test Groupes & Diffusion</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="groupId"
+              placeholder="ID Groupe (ObjectId auto)"
+            />
+            <button onclick="generateGroupId()" class="btn-secondary">
+              🔧 Générer ID Groupe
+            </button>
+            <input
+              type="text"
+              id="broadcastId"
+              placeholder="ID Liste de diffusion (ObjectId auto)"
+            />
+            <button onclick="generateBroadcastId()" class="btn-secondary">
+              🔧 Générer ID Diffusion
+            </button>
+            <input
+              type="text"
+              id="groupReceiverIds"
+              placeholder="IDs utilisateurs (séparés par virgule)"
+            />
+            <textarea
+              id="groupMessageContent"
+              placeholder="Message pour le groupe..."
+              rows="2"
+            ></textarea>
+            <textarea
+              id="broadcastMessageContent"
+              placeholder="Message pour la diffusion..."
+              rows="2"
+            ></textarea>
+            <input
+              type="text"
+              id="groupName"
+              placeholder="Nom du groupe (optionnel)"
+            />
+            <input
+              type="text"
+              id="broadcastName"
+              placeholder="Nom de la diffusion (optionnel)"
+            />
+            <div class="button-grid">
+              <button onclick="sendGroupMessage()" class="btn-success">
+                📤 Envoyer au Groupe
+              </button>
+              <button onclick="sendBroadcastMessage()" class="btn-warning">
+                📤 Envoyer à la Diffusion
+              </button>
+              <button onclick="fetchGroupMessages()" class="btn-secondary">
+                📥 Récupérer Messages Groupe
+              </button>
+              <button onclick="fetchBroadcastMessages()" class="btn-secondary">
+                📥 Récupérer Messages Diffusion
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section réception complète des messages -->
+        <div class="section all-messages-section">
+          <h2>📥 Tous les messages reçus</h2>
+          <div id="allMessagesList"></div>
+        </div>
+
+        <!-- Section Présence -->
+        <div class="section presence-section">
+          <h2>👁️ Test Présence & Surveillance</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="targetUserId"
+              placeholder="ID Utilisateur cible"
+              value="2"
+            />
+            <select id="userRole">
+              <option value="member">Membre</option>
+              <option value="moderator">Modérateur</option>
+              <option value="admin">Admin</option>
+            </select>
+
+            <div class="button-grid">
+              <button
+                onclick="getConversationOnlineUsers()"
+                class="btn-primary"
+              >
+                👥 Users En Ligne
+              </button>
+              <button
+                onclick="getConversationsWithPresence()"
+                class="btn-primary"
+              >
+                📋 Conversations + Présence
+              </button>
+              <button onclick="subscribeToPresence()" class="btn-success">
+                👁️ Surveiller Présence
+              </button>
+              <button onclick="unsubscribeFromPresence()" class="btn-warning">
+                🚫 Arrêter Surveillance
+              </button>
+            </div>
+
+            <div class="button-grid">
+              <button onclick="getPresenceDashboard()" class="btn-secondary">
+                📊 Dashboard Global
+              </button>
+              <button onclick="setUserRole()" class="btn-warning">
+                👑 Définir Rôle
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs en temps réel -->
+      <div class="logs-section">
+        <div class="logs-header">
+          <h3>📊 Logs en temps réel</h3>
+          <button onclick="clearLogs()" class="btn-clear">🧹 Vider</button>
+        </div>
+        <div class="logs-container" id="logsContainer"></div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

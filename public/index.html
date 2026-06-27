@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🔧 Testeur Socket.IO - CENADI Chat Service</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <h1>🔧 Testeur Socket.IO - CENADI Chat Service</h1>
+        <div class="connection-status" id="connectionStatus">🔴 Déconnecté</div>
+      </header>
+
+      <div class="main-content">
+        <!-- Section Authentification -->
+        <div class="section auth-section">
+          <h2>🔐 Authentification</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="userId"
+              placeholder="ID Utilisateur (ex: 570479H)"
+              value="570479H"
+            />
+            <input
+              type="text"
+              id="matricule"
+              placeholder="Matricule (ex: 570479H)"
+              value="570479H"
+            />
+            <input type="text" id="token" placeholder="Token JWT (optionnel)" />
+            <!-- ✅ Ajout receiverId -->
+            <input
+              type="text"
+              id="receiverIdAuth"
+              placeholder="ID Destinataire (ex: 534589D)"
+              value=""
+            />
+            <!-- ✅ Ajout statut -->
+            <select id="statusAuth">
+              <option value="">-- Statut (optionnel) --</option>
+              <option value="DELIVERED">DELIVERED</option>
+              <option value="SENT">SENT</option>
+              <option value="READ">READ</option>
+            </select>
+            <button onclick="authenticate()" class="btn-primary">
+              🔑 S'authentifier
+            </button>
+          </div>
+          <div class="status" id="authStatus"></div>
+        </div>
+
+        <!-- Section Tests de Base -->
+        <div class="section test-section">
+          <h2>🧪 Tests de Base</h2>
+          <div class="button-grid">
+            <button onclick="pingTest()" class="btn-secondary">
+              🏓 Test Ping
+            </button>
+            <button onclick="getOnlineUsers()" class="btn-secondary">
+              👥 Utilisateurs en ligne
+            </button>
+            <button onclick="disconnect()" class="btn-warning">
+              🔌 Déconnecter
+            </button>
+            <button onclick="reconnect()" class="btn-success">
+              🔄 Reconnecter
+            </button>
+          </div>
+        </div>
+
+        <!-- Section Messages -->
+        <div class="section message-section">
+          <h2>💬 Test Messages</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="conversationId"
+              placeholder="ID Conversation MongoDB (ex: 60f7b3b3b3b3b3b3b3b3b3b6)"
+              value=""
+            />
+            <input
+              type="text"
+              id="receiverId"
+              placeholder="ID Destinataire (ex: 534589D)"
+              value="534589D"
+            />
+            <textarea
+              id="messageContent"
+              placeholder="Contenu du message (texte, emoji autorisés)..."
+              rows="3"
+            >
+Message de test 🚀</textarea
+            >
+            <select id="messageType">
+              <option value="TEXT">📝 TEXT</option>
+              <option value="IMAGE">🖼️ IMAGE</option>
+              <option value="FILE">📎 FILE</option>
+              <option value="VIDEO">🎬 VIDEO</option>
+              <option value="AUDIO">🎵 AUDIO</option>
+            </select>
+            <div class="button-grid">
+              <button
+                onclick="validateMessageData() && sendMessage()"
+                class="btn-primary"
+              >
+                📤 Envoyer Message
+              </button>
+              <button onclick="generateTestIds()" class="btn-secondary">
+                🔧 Générer IDs Test
+              </button>
+              <button onclick="validateMessageData()" class="btn-info">
+                ✅ Valider
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 Conversation privée: entrez un conversationId OU un
+                receiverId<br />
+                💡 Message dans groupe: entrez uniquement le conversationId<br />
+                💡 Le type par défaut est TEXT
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Conversations -->
+        <div class="section conversation-section">
+          <h2>🗨️ Test Conversations</h2>
+          <div class="button-grid">
+            <button onclick="joinConversation()" class="btn-success">
+              ➕ Rejoindre Conversation
+            </button>
+            <button onclick="leaveConversation()" class="btn-warning">
+              ➖ Quitter Conversation
+            </button>
+            <button onclick="startTyping()" class="btn-secondary">
+              ⌨️ Commencer à taper
+            </button>
+            <button onclick="stopTyping()" class="btn-secondary">
+              ⏹️ Arrêter de taper
+            </button>
+          </div>
+        </div>
+
+        <!-- ✅ NOUVELLE SECTION: Récupération Messages -->
+        <div class="section get-messages-section">
+          <h2>📥 Récupération Messages</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="messagesConversationId"
+              placeholder="ID Conversation (requis)"
+              value=""
+            />
+            <input
+              type="number"
+              id="messagesLimit"
+              placeholder="Limite (défaut: 20)"
+              value="20"
+              min="1"
+              max="100"
+            />
+            <input
+              type="text"
+              id="messagesCursor"
+              placeholder="Cursor pour pagination (optionnel)"
+              value=""
+            />
+            <div class="button-grid">
+              <button onclick="getMessages()" class="btn-primary">
+                📥 Récupérer Messages
+              </button>
+              <button onclick="getMessagesQuickload()" class="btn-success">
+                ⚡ Quick Load
+              </button>
+              <button onclick="getMessagesFullload()" class="btn-secondary">
+                📚 Full Load
+              </button>
+            </div>
+          </div>
+
+          <!-- Affichage des résultats des messages -->
+          <div
+            class="messages-results"
+            id="messagesResults"
+            style="display: none"
+          >
+            <div class="messages-stats" id="messagesStats"></div>
+            <div class="messages-list" id="messagesList"></div>
+          </div>
+        </div>
+
+        <!-- ✅ NOUVELLE SECTION: Récupération Conversations -->
+        <div class="section get-conversations-section">
+          <h2>📋 Récupération Conversations</h2>
+          <div class="form-group">
+            <input
+              type="number"
+              id="conversationsPage"
+              placeholder="Page (défaut: 1)"
+              value="1"
+              min="1"
+            />
+            <input
+              type="number"
+              id="conversationsLimit"
+              placeholder="Limite (défaut: 20)"
+              value="20"
+              min="1"
+              max="100"
+            />
+            <div class="button-grid">
+              <button onclick="getConversations()" class="btn-primary">
+                📥 Récupérer Conversations
+              </button>
+              <button onclick="getConversationsQuickload()" class="btn-success">
+                ⚡ Quick Load
+              </button>
+              <button
+                onclick="getConversationsFullload()"
+                class="btn-secondary"
+              >
+                📚 Full Load
+              </button>
+            </div>
+          </div>
+
+          <!-- Affichage des résultats -->
+          <div
+            class="conversations-results"
+            id="conversationsResults"
+            style="display: none"
+          >
+            <!-- Contexte utilisateur -->
+            <div class="user-context" id="userContext"></div>
+
+            <!-- Statistiques globales -->
+            <div class="conversations-stats" id="conversationsStats"></div>
+
+            <!-- Onglets par catégorie -->
+            <div class="conversation-tabs">
+              <button
+                class="tab-btn active"
+                onclick="switchConversationTab('all')"
+                id="convAllTab"
+              >
+                📋 Toutes (<span id="convAllCount">0</span>)
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchConversationTab('unread')"
+                id="convUnreadTab"
+              >
+                📬 Non lues (<span id="convUnreadCount">0</span>)
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchConversationTab('groups')"
+                id="convGroupsTab"
+              >
+                👥 Groupes (<span id="convGroupsCount">0</span>)
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchConversationTab('broadcasts')"
+                id="convBroadcastsTab"
+              >
+                📢 Diffusions (<span id="convBroadcastsCount">0</span>)
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchConversationTab('departement')"
+                id="convDepartementTab"
+              >
+                🏢 Département (<span id="convDepartementCount">0</span>)
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchConversationTab('private')"
+                id="convPrivateTab"
+              >
+                💬 Privées (<span id="convPrivateCount">0</span>)
+              </button>
+            </div>
+
+            <!-- Liste des conversations par catégorie -->
+            <div class="conversations-list" id="conversationsList"></div>
+
+            <!-- Pagination -->
+            <div
+              class="conversations-pagination"
+              id="conversationsPagination"
+            ></div>
+          </div>
+        </div>
+
+        <!-- ✅ SECTION GROUPES ET ADMINS -->
+        <div class="section group-section">
+          <h2>👥 Gestion des Groupes & Admins</h2>
+          <div class="form-group">
+            <h3>Créer un Groupe</h3>
+            <input
+              type="text"
+              id="groupName"
+              placeholder="Nom du groupe (ex: Équipe Dev)"
+              value="Groupe de test"
+            />
+            <input
+              type="text"
+              id="groupMembers"
+              placeholder="IDs des membres séparés par des virgules (ex: 534589D,570479H)"
+              value="534589D"
+            />
+            <button onclick="createGroup()" class="btn-primary">
+              ➕ Créer Groupe
+            </button>
+            <div class="status" id="createGroupStatus"></div>
+          </div>
+
+          <div class="form-group">
+            <h3>Ajouter Participant</h3>
+            <input
+              type="text"
+              id="groupIdAdd"
+              placeholder="ID du groupe/channel"
+              value=""
+            />
+            <input
+              type="text"
+              id="participantIdAdd"
+              placeholder="ID du participant à ajouter (ex: 534589D)"
+              value=""
+            />
+            <button onclick="addParticipantToGroup()" class="btn-success">
+              ➕ Ajouter Participant
+            </button>
+            <div class="status" id="addParticipantStatus"></div>
+          </div>
+
+          <div class="form-group">
+            <h3>Promouvoir Admins</h3>
+            <input
+              type="text"
+              id="groupIdAdmin"
+              placeholder="ID du groupe/channel"
+              value=""
+            />
+            <input
+              type="text"
+              id="adminUserIds"
+              placeholder="IDs des membres à promouvoir (séparés par des virgules)"
+              value=""
+            />
+            <button onclick="addAdminsToGroup()" class="btn-warning">
+              👑 Promouvoir Admin(s)
+            </button>
+            <div class="status" id="addAdminStatus"></div>
+          </div>
+
+          <div class="form-group">
+            <h3>Retirer Participant</h3>
+            <input
+              type="text"
+              id="groupIdRemove"
+              placeholder="ID du groupe"
+              value=""
+            />
+            <input
+              type="text"
+              id="participantIdRemove"
+              placeholder="ID du participant à retirer (ex: 534589D)"
+              value=""
+            />
+            <button onclick="removeParticipantFromGroup()" class="btn-danger">
+              ➖ Retirer Participant
+            </button>
+            <div class="status" id="removeParticipantStatus"></div>
+          </div>
+
+          <div class="form-group">
+            <h3>Quitter un Groupe</h3>
+            <input
+              type="text"
+              id="groupIdLeave"
+              placeholder="ID du groupe à quitter"
+              value=""
+            />
+            <button onclick="leaveGroupAction()" class="btn-warning">
+              🚪 Quitter le Groupe
+            </button>
+            <div class="status" id="leaveGroupStatus"></div>
+          </div>
+
+          <div class="form-group">
+            <h3>Récupérer Groupe</h3>
+            <input
+              type="text"
+              id="groupIdGet"
+              placeholder="ID du groupe"
+              value=""
+            />
+            <button onclick="getGroupDetails()" class="btn-secondary">
+              🔍 Récupérer Détails
+            </button>
+            <div class="status" id="getGroupStatus"></div>
+            <pre id="groupDetailsOutput"></pre>
+          </div>
+
+          <div class="form-group">
+            <h3>Rechercher dans les Groupes</h3>
+            <input
+              type="text"
+              id="groupSearchQuery"
+              placeholder="Mot-clé de recherche (min. 2 caractères)"
+              value=""
+            />
+            <button onclick="searchGroups()" class="btn-info">
+              🔎 Rechercher
+            </button>
+            <div class="status" id="searchGroupsStatus"></div>
+            <pre id="searchGroupsOutput"></pre>
+          </div>
+        </div>
+
+        <!-- Section Tests Avancés -->
+        <div class="section advanced-section">
+          <h2>🔬 Tests Avancés</h2>
+          <div class="button-grid">
+            <button onclick="testInvalidData()" class="btn-danger">
+              ❌ Test Données Invalides
+            </button>
+            <button onclick="testLongMessage()" class="btn-secondary">
+              📝 Test Message Long
+            </button>
+            <button onclick="testSpecialChars()" class="btn-secondary">
+              🔤 Test Caractères Spéciaux
+            </button>
+            <button onclick="stressTest()" class="btn-warning">
+              ⚡ Test de Charge
+            </button>
+          </div>
+        </div>
+
+        <!-- ✅ AJOUTER CETTE SECTION APRÈS LA SECTION CONVERSATIONS -->
+        <div class="section message-status-section">
+          <h2>📊 Statuts de Messages</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="messageIdStatus"
+              placeholder="ID du Message (laisser vide pour utiliser le dernier envoyé)"
+              value=""
+            />
+            <div class="button-grid">
+              <button onclick="getLastMessageId()" class="btn-info">
+                🔍 Récupérer Dernier ID
+              </button>
+              <button onclick="markMessageDelivered()" class="btn-success">
+                📬 Marquer Livré
+              </button>
+              <button onclick="markMessageRead()" class="btn-success">
+                📖 Marquer Lu
+              </button>
+              <button onclick="markConversationRead()" class="btn-primary">
+                📚 Marquer Conversation Lue
+              </button>
+              <button onclick="getMessageStatus()" class="btn-secondary">
+                📊 Obtenir Statut
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                🔍 Utilisez "Récupérer Dernier ID" pour auto-remplir avec le
+                dernier message envoyé
+              </small>
+              <br />
+              <small>
+                📬 Livré = Le message est arrivé sur l'appareil du destinataire
+              </small>
+              <br />
+              <small> 📖 Lu = Le destinataire a ouvert et lu le message </small>
+              <br />
+              <small>
+                📚 Conversation Lue = Tous les messages non lus de la
+                conversation sont marqués comme lus
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Messages & Événements Reçus -->
+        <div class="section messages-display-section">
+          <h2>📨 Messages & Événements Reçus</h2>
+          <div class="messages-container">
+            <!-- Onglets pour filtrer les types de messages -->
+            <div class="message-tabs">
+              <button
+                class="tab-btn active"
+                onclick="switchMessageTab('all')"
+                id="allTab"
+              >
+                📋 Tous
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchMessageTab('messages')"
+                id="messagesTab"
+              >
+                💬 Messages
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchMessageTab('typing')"
+                id="typingTab"
+              >
+                ⌨️ Frappe
+              </button>
+              <button
+                class="tab-btn"
+                onclick="switchMessageTab('users')"
+                id="usersTab"
+              >
+                👥 Utilisateurs
+              </button>
+            </div>
+
+            <!-- Zone d'affichage des messages -->
+            <div class="messages-display" id="messagesDisplay">
+              <div class="empty-state">
+                <i class="fas fa-inbox"></i>
+                <p>Aucun message reçu</p>
+                <small>Les messages et événements apparaîtront ici</small>
+              </div>
+            </div>
+
+            <!-- Contrôles -->
+            <div class="message-controls">
+              <button onclick="clearMessages()" class="btn-clear">
+                🗑️ Vider Messages
+              </button>
+              <button
+                onclick="toggleAutoScroll()"
+                class="btn-secondary"
+                id="autoScrollBtn"
+              >
+                📜 Auto-scroll: ON
+              </button>
+              <div class="message-stats">
+                <span id="messageCount">0 messages</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Utilisateurs En Ligne -->
+        <div class="section online-users-section">
+          <h2>👥 Utilisateurs En Ligne</h2>
+          <div class="online-users-container">
+            <div class="users-grid" id="onlineUsersGrid">
+              <div class="empty-state">
+                <i class="fas fa-users"></i>
+                <p>Aucun utilisateur en ligne</p>
+                <small
+                  >Authentifiez-vous pour voir les utilisateurs connectés</small
+                >
+              </div>
+            </div>
+            <div class="users-stats">
+              <span id="onlineCount">0 utilisateurs en ligne</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Indicateurs de Frappe -->
+        <div class="section typing-indicators-section">
+          <h2>⌨️ Indicateurs de Frappe</h2>
+          <div class="typing-container">
+            <div class="typing-list" id="typingList">
+              <div class="empty-state">
+                <i class="fas fa-keyboard"></i>
+                <p>Personne n'écrit actuellement</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Upload de Fichier -->
+        <div class="section file-upload-section">
+          <h2>📁 Envoyer un Fichier</h2>
+          <form id="fileUploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+              <input type="file" id="fileInput" name="file" required />
+              <input
+                type="text"
+                id="fileConversationId"
+                placeholder="ID Conversation (optionnel)"
+              />
+              <button type="submit" class="btn-primary">
+                ⬆️ Envoyer Fichier
+              </button>
+            </div>
+            <div class="status" id="fileUploadStatus"></div>
+          </form>
+        </div>
+
+        <!-- Section Mes Fichiers -->
+        <div class="section my-files-section">
+          <h2>📁 Mes Fichiers</h2>
+          <div class="button-grid">
+            <button onclick="fetchMyFiles()" class="btn-secondary">
+              📁 Mes Fichiers
+            </button>
+          </div>
+          <div id="myFilesList"></div>
+        </div>
+
+        <!-- Section Groupes et Diffusion -->
+        <div class="section group-section">
+          <h2>👥 Test Groupes & Diffusion</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="groupId"
+              placeholder="ID Groupe (ObjectId auto)"
+            />
+            <button onclick="generateGroupId()" class="btn-secondary">
+              🔧 Générer ID Groupe
+            </button>
+            <input
+              type="text"
+              id="broadcastId"
+              placeholder="ID Liste de diffusion (ObjectId auto)"
+            />
+            <button onclick="generateBroadcastId()" class="btn-secondary">
+              🔧 Générer ID Diffusion
+            </button>
+            <input
+              type="text"
+              id="groupReceiverIds"
+              placeholder="IDs utilisateurs (ex: 534589D,570479H)"
+            />
+            <textarea
+              id="groupMessageContent"
+              placeholder="Message pour le groupe..."
+              rows="2"
+            ></textarea>
+            <textarea
+              id="broadcastMessageContent"
+              placeholder="Message pour la diffusion..."
+              rows="2"
+            ></textarea>
+            <input
+              type="text"
+              id="groupName"
+              placeholder="Nom du groupe (optionnel)"
+            />
+            <input
+              type="text"
+              id="broadcastName"
+              placeholder="Nom de la diffusion (optionnel)"
+            />
+            <div class="button-grid">
+              <button onclick="createGroup()" class="btn-primary">
+                ➕ Créer Groupe
+              </button>
+              <button onclick="createBroadcast()" class="btn-primary">
+                ➕ Créer Diffusion
+              </button>
+              <button onclick="sendGroupMessage()" class="btn-success">
+                📤 Envoyer au Groupe
+              </button>
+              <button onclick="sendBroadcastMessage()" class="btn-warning">
+                📤 Envoyer à la Diffusion
+              </button>
+              <button onclick="fetchGroupMessages()" class="btn-secondary">
+                📥 Récupérer Messages Groupe
+              </button>
+              <button onclick="fetchBroadcastMessages()" class="btn-secondary">
+                📥 Récupérer Messages Diffusion
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ✅ Section Gestion des Participants -->
+        <div class="section participant-section">
+          <h2>👥 Gestion des Participants</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="participantConversationId"
+              placeholder="ID Conversation (groupe)"
+            />
+            <input
+              type="text"
+              id="participantUserId"
+              placeholder="ID(s) Utilisateur (ex: 534589D,570479H)"
+            />
+            <div class="button-grid">
+              <button onclick="addParticipant()" class="btn-success">
+                ➕ Ajouter Participant(s)
+              </button>
+              <button onclick="removeParticipant()" class="btn-danger">
+                ➖ Retirer Participant(s)
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 Seuls les groupes peuvent avoir des participants
+                ajoutés/retirés. Vous pouvez entrer plusieurs IDs séparés par
+                des virgules (ex: id1, id2, id3).
+              </small>
+            </div>
+          </div>
+          <div class="status" id="participantStatus"></div>
+        </div>
+
+        <!-- ✅ Section Quitter une Conversation -->
+        <div class="section leave-section">
+          <h2>🚪 Quitter une Conversation</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="leaveConversationId"
+              placeholder="ID Conversation à quitter définitivement"
+            />
+            <div class="button-grid">
+              <button onclick="leaveConversationPermanent()" class="btn-danger">
+                🚪 Quitter Définitivement
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                ⚠️ Cette action est irréversible ! Vous serez retiré du groupe
+                et ne recevrez plus les messages. Le créateur du groupe ne peut
+                pas quitter (il doit transférer la propriété d'abord).
+              </small>
+            </div>
+          </div>
+          <div class="status" id="leaveStatus"></div>
+        </div>
+
+        <!-- ✅ Section Modifier un Message -->
+        <div class="section edit-message-section">
+          <h2>✏️ Modifier un Message</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="editMessageId"
+              placeholder="ID du Message à modifier"
+            />
+            <textarea
+              id="editMessageContent"
+              placeholder="Nouveau contenu du message..."
+              rows="3"
+            ></textarea>
+            <div class="button-grid">
+              <button onclick="editMessage()" class="btn-primary">
+                ✏️ Modifier Message
+              </button>
+              <button onclick="fillEditMessageId()" class="btn-secondary">
+                🔍 Utiliser Dernier Message
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 Seul l'auteur du message peut le modifier. Utilisez "Utiliser
+                Dernier Message" pour auto-remplir l'ID.
+              </small>
+            </div>
+          </div>
+          <div class="status" id="editMessageStatus"></div>
+        </div>
+
+        <!-- ✅ Section Supprimer un Message -->
+        <div class="section delete-message-section">
+          <h2>🗑️ Supprimer un Message</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="deleteMessageId"
+              placeholder="ID du Message à supprimer"
+            />
+            <select id="deleteType">
+              <option value="FOR_ME">🙈 Supprimer pour moi uniquement</option>
+              <option value="FOR_EVERYONE">
+                🗑️ Supprimer pour tout le monde
+              </option>
+            </select>
+            <input
+              type="text"
+              id="deleteMessageConversationId"
+              placeholder="ID Conversation (requis pour FOR_EVERYONE)"
+            />
+            <div class="button-grid">
+              <button onclick="deleteMessageAction()" class="btn-danger">
+                🗑️ Supprimer Message
+              </button>
+              <button onclick="fillDeleteMessageId()" class="btn-secondary">
+                🔍 Utiliser Dernier Message
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                ⚠️ "Pour tout le monde" : seul l'expéditeur peut supprimer, dans
+                un délai de 5 minutes.
+                <br />
+                📌 "Pour moi" : le message reste visible pour les autres.
+              </small>
+            </div>
+          </div>
+          <div class="status" id="deleteMessageStatus"></div>
+        </div>
+
+        <!-- ✅ Section Transférer un Message -->
+        <div class="section forward-message-section">
+          <h2>📤 Transférer un Message</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="forwardMessageId"
+              placeholder="ID du Message à transférer"
+            />
+            <textarea
+              id="forwardTargetConversationIds"
+              placeholder="ID(s) Conversation(s) cible(s) — un par ligne ou séparés par des virgules (max 10)"
+              rows="3"
+            ></textarea>
+            <div class="button-grid">
+              <button onclick="forwardMessageAction()" class="btn-primary">
+                📤 Transférer Message
+              </button>
+              <button onclick="fillForwardMessageId()" class="btn-secondary">
+                🔍 Utiliser Dernier Message
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                📤 Transfère le contenu (texte, fichier, type) du message
+                original vers une ou plusieurs conversations.<br />
+                💡 Vous pouvez entrer plusieurs IDs de conversations (max 10),
+                séparés par des virgules ou un par ligne.<br />
+                🔄 Le message transféré sera marqué comme
+                <strong>transféré</strong> avec la référence au message
+                d'origine.
+              </small>
+            </div>
+          </div>
+          <div class="status" id="forwardMessageStatus"></div>
+        </div>
+
+        <!-- ✅ Section Supprimer un Fichier -->
+        <div class="section delete-file-section">
+          <h2>🗑️ Supprimer un Fichier</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="deleteFileId"
+              placeholder="ID du Fichier à supprimer"
+            />
+            <label class="checkbox-label">
+              <input type="checkbox" id="physicalDelete" checked />
+              Suppression physique (supprime aussi le fichier du disque)
+            </label>
+            <div class="button-grid">
+              <button onclick="deleteFileAction()" class="btn-danger">
+                🗑️ Supprimer Fichier
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 Seul l'uploadeur du fichier peut le supprimer. Si la
+                suppression physique est cochée, le fichier sera aussi supprimé
+                du disque.
+              </small>
+            </div>
+          </div>
+          <div class="status" id="deleteFileStatus"></div>
+        </div>
+
+        <!-- ✅ Section Télécharger un Fichier -->
+        <div class="section download-file-section">
+          <h2>📥 Télécharger un Fichier</h2>
+          <div class="form-group">
+            <input
+              type="text"
+              id="downloadFileId"
+              placeholder="ID du Fichier à télécharger"
+            />
+            <div class="button-grid">
+              <button onclick="downloadFileById()" class="btn-primary">
+                📥 Télécharger Fichier
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 Entrez l'ID du fichier pour le télécharger. Vous pouvez aussi
+                télécharger depuis la section "Mes Fichiers".
+              </small>
+            </div>
+          </div>
+          <div class="status" id="downloadFileStatus"></div>
+        </div>
+
+        <!-- ✅ Section Appels (CALL / VIDEO_CALL) -->
+        <div class="section call-section">
+          <h2>📞 Appels Audio / Vidéo</h2>
+
+          <!-- Initier un appel -->
+          <div class="form-group">
+            <h3>📲 Initier un Appel</h3>
+            <input
+              type="text"
+              id="callConversationId"
+              placeholder="ID Conversation (optionnel si receiverId fourni)"
+            />
+            <input
+              type="text"
+              id="callReceiverId"
+              placeholder="ID Destinataire (ex: 534589D)"
+              value="534589D"
+            />
+            <select id="callType">
+              <option value="AUDIO">📞 Appel Audio</option>
+              <option value="VIDEO">📹 Appel Vidéo</option>
+            </select>
+            <div class="button-grid">
+              <button onclick="initiateCall()" class="btn-primary">
+                📞 Lancer l'Appel
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                💡 L'appel crée un message CALL/VIDEO_CALL et notifie le
+                destinataire via <code>call:incoming</code>.
+              </small>
+            </div>
+          </div>
+          <div class="status" id="initiateCallStatus"></div>
+
+          <!-- Gérer un appel en cours -->
+          <div class="form-group">
+            <h3>🎛️ Gérer un Appel en Cours</h3>
+            <input
+              type="text"
+              id="activeCallId"
+              placeholder="Call ID (auto-rempli après initiation)"
+            />
+            <input
+              type="text"
+              id="activeCallMessageId"
+              placeholder="Message ID (auto-rempli après initiation)"
+            />
+            <input
+              type="text"
+              id="activeCallConversationId"
+              placeholder="Conversation ID (auto-rempli après initiation)"
+            />
+            <div class="button-grid">
+              <button onclick="answerCall()" class="btn-success">
+                ✅ Décrocher
+              </button>
+              <button onclick="declineCall()" class="btn-danger">
+                ❌ Refuser
+              </button>
+              <button onclick="endCall()" class="btn-warning">
+                📴 Raccrocher
+              </button>
+              <button onclick="missedCall()" class="btn-secondary">
+                📵 Appel Manqué
+              </button>
+            </div>
+            <div class="form-help">
+              <small>
+                ✅ <strong>Décrocher</strong> : passe le statut à ANSWERED<br />
+                ❌ <strong>Refuser</strong> : passe le statut à DECLINED<br />
+                📴 <strong>Raccrocher</strong> : termine l'appel (calcule la
+                durée)<br />
+                📵 <strong>Appel Manqué</strong> : marque l'appel comme MISSED
+              </small>
+            </div>
+          </div>
+          <div class="status" id="callActionStatus"></div>
+
+          <!-- Journal des appels -->
+          <div class="form-group">
+            <h3>📋 Journal des Appels</h3>
+            <div class="button-grid">
+              <button onclick="clearCallLog()" class="btn-clear">
+                🗑️ Vider le Journal
+              </button>
+            </div>
+            <div
+              id="callLog"
+              style="
+                max-height: 300px;
+                overflow-y: auto;
+                margin-top: 10px;
+                padding: 10px;
+                background: #1e1e2e;
+                border-radius: 8px;
+                font-family: monospace;
+                font-size: 13px;
+              "
+            ></div>
+          </div>
+        </div>
+
+        <!-- Section réception complète des messages -->
+        <div class="section all-messages-section">
+          <h2>📥 Tous les messages reçus</h2>
+          <div id="allMessagesList"></div>
+        </div>
+      </div>
+
+      <!-- Logs en temps réel -->
+      <div class="logs-section">
+        <div class="logs-header">
+          <h3>📊 Logs en temps réel</h3>
+          <button onclick="clearLogs()" class="btn-clear">🧹 Vider</button>
+        </div>
+        <div class="logs-container" id="logsContainer"></div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="group-functions.js"></script>
+  </body>
+</html>
