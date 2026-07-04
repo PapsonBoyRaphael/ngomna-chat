@@ -99,6 +99,18 @@ class OnlineUserManager {
     if (!this.redis) return;
 
     try {
+      // Fermer proprement un éventuel subscriber existant avant d'en créer
+      // un nouveau, pour éviter l'accumulation de connexions Redis.
+      if (this.subscriber) {
+        try {
+          await this.subscriber.unsubscribe();
+          await this.subscriber.quit();
+        } catch (err) {
+          console.warn("⚠️ Erreur cleanup ancien subscriber:", err.message);
+        }
+        this.subscriber = null;
+      }
+
       this.subscriber = this.redis.duplicate();
       await this.subscriber.connect();
 

@@ -109,6 +109,18 @@ class RoomManager {
     if (!this.redis) return;
 
     try {
+      // Fermer proprement un éventuel subscriber existant avant d'en créer
+      // un nouveau, pour éviter l'accumulation de connexions Redis.
+      if (this.roomSubscriber) {
+        try {
+          await this.roomSubscriber.unsubscribe();
+          await this.roomSubscriber.quit();
+        } catch (err) {
+          console.warn("⚠️ Erreur cleanup ancien roomSubscriber:", err.message);
+        }
+        this.roomSubscriber = null;
+      }
+
       this.roomSubscriber = this.redis.duplicate();
       await this.roomSubscriber.connect();
 

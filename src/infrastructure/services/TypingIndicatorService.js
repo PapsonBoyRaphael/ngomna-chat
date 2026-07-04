@@ -26,6 +26,12 @@ class TypingIndicatorService {
     this.CONSUMER_GROUP = "typing-indicators";
     this.CONSUMER_NAME = "typing-indicator-consumer";
 
+    // ✅ Cache court de la map userId → socketIds (évite de la reconstruire
+    //    pour chaque participant lors d'un broadcast typing)
+    this._userSocketsCache = null;
+    this._userSocketsCacheAt = 0;
+    this.USER_SOCKETS_CACHE_TTL = 500; // ms
+
     console.log("✅ TypingIndicatorService initialisé");
   }
 
@@ -61,14 +67,26 @@ class TypingIndicatorService {
     try {
       await this.initConsumerGroup();
 
-      // Lancer la consommation en arrière-plan
-      setInterval(async () => {
+      // Lancer la consommation en arrière-plan (handle stocké pour pouvoir
+      // l'arrêter proprement lors d'un shutdown).
+      this._consumerInterval = setInterval(async () => {
         await this.consumeTypingEvents();
       }, 50); // Consommer TRÈS souvent (50ms) pour typing temps-réel
 
       console.log("✅ Consumer typing démarré");
     } catch (err) {
       console.error("❌ Erreur démarrage consumer typing:", err);
+    }
+  }
+
+  /**
+   * ✅ ARRÊTER LE CONSUMER TYPING
+   */
+  async stopConsumer() {
+    if (this._consumerInterval) {
+      clearInterval(this._consumerInterval);
+      this._consumerInterval = null;
+      console.log("✅ Consumer typing arrêté");
     }
   }
 
@@ -389,6 +407,15 @@ class TypingIndicatorService {
    * ✅ OBTENIR LA MAP DES SOCKETS (depuis Socket.IO)
    */
   getUserSockets() {
+    // ✅ Renvoyer le cache s'il est encore valide (< 500ms)
+    const now = Date.now();
+    if (
+      this._userSocketsCache &&
+      now - this._userSocketsCacheAt < this.USER_SOCKETS_CACHE_TTL
+    ) {
+      return this._userSocketsCache;
+    }
+
     // ✅ CONSTRUIRE LA MAP DEPUIS TOUS LES SOCKETS CONNECTÉS
     const userSockets = new Map();
 
@@ -403,6 +430,9 @@ class TypingIndicatorService {
         userSockets.get(userIdStr).push(socketId);
       }
     }
+
+    this._userSocketsCache = userSockets;
+    this._userSocketsCacheAt = now;
 
     return userSockets;
   }

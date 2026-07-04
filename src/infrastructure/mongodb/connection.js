@@ -1,5 +1,27 @@
 const mongoose = require("mongoose");
 
+// Les listeners sont attachés au singleton mongoose.connection.
+// On garantit qu'ils ne sont enregistrés qu'une seule fois, même si
+// connectDB() est appelée plusieurs fois, pour éviter leur accumulation.
+let listenersRegistered = false;
+
+const registerConnectionListeners = () => {
+  if (listenersRegistered) return;
+  listenersRegistered = true;
+
+  mongoose.connection.on("error", (error) => {
+    console.error("❌ Erreur MongoDB:", error);
+  });
+
+  mongoose.connection.on("disconnected", () => {
+    console.warn("⚠️ MongoDB déconnecté");
+  });
+
+  mongoose.connection.on("reconnected", () => {
+    console.log("🔄 MongoDB reconnecté");
+  });
+};
+
 const connectDB = async () => {
   try {
     const options = {
@@ -8,28 +30,21 @@ const connectDB = async () => {
       maxPoolSize: 10,
       minPoolSize: 5,
       maxIdleTimeMS: 30000,
+      heartbeatFrequencyMS: 10000,
+      socketTimeoutMS: 45000,
       // Options dépréciées supprimées pour éviter les warnings
     };
 
+    // Enregistrés avant connect() pour capter aussi les erreurs
+    // survenant pendant la connexion initiale.
+    registerConnectionListeners();
+
     await mongoose.connect(
-      process.env.MONGODB_URI || "mongodb://localhost:27017/db_chat",
-      options
+      process.env.MONGODB_URI || "mongodb://localhost:27017/chat_file_service",
+      options,
     );
 
     console.log("✅ Connexion MongoDB établie");
-
-    // Gestionnaires d'événements
-    mongoose.connection.on("error", (error) => {
-      console.error("❌ Erreur MongoDB:", error);
-    });
-
-    mongoose.connection.on("disconnected", () => {
-      console.warn("⚠️ MongoDB déconnecté");
-    });
-
-    mongoose.connection.on("reconnected", () => {
-      console.log("🔄 MongoDB reconnecté");
-    });
 
     return true;
   } catch (error) {

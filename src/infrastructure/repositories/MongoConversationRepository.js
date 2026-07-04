@@ -6,8 +6,8 @@ class MongoConversationRepository {
    * @param {Object} query - Objet de requête MongoDB (ex: { code_structure: '...' })
    * @returns {Promise<Object|null>} Conversation trouvée ou null
    */
- 
-   /**
+
+  /**
    * Trouve une conversation par query MongoDB (ex: { code_structure: "..." })
    */
   async findOne(query = {}) {
@@ -21,7 +21,6 @@ class MongoConversationRepository {
       throw error;
     }
   }
-
 
   constructor(kafkaProducer = null, resilientMessageService = null) {
     this.kafkaProducer = kafkaProducer;
@@ -1550,6 +1549,188 @@ class MongoConversationRepository {
     } catch (error) {
       console.error(`❌ Erreur findLastSeenForUser:`, error.message);
       return null;
+    }
+  }
+
+  // ===== MÉTHODES BROADCAST =====
+
+  /**
+   * ✅ TROUVER UNE CONVERSATION PRIVÉE ENTRE DEUX PARTICIPANTS
+   * Délègue à la méthode statique du modèle Conversation
+   * @param {string} participant1 - ID du premier participant
+   * @param {string} participant2 - ID du second participant
+   * @returns {Promise<object|null>} La conversation privée ou null
+   */
+  async findPrivateConversation(participant1, participant2) {
+    try {
+      console.log(`🔍 Recherche conversation privée:`, {
+        participant1,
+        participant2,
+      });
+
+      // Déléguer à la méthode statique du modèle
+      const conversation = await Conversation.findPrivateConversation(
+        participant1,
+        participant2,
+      );
+
+      if (conversation) {
+        console.log(
+          `✅ Conversation privée trouvée: ${conversation._id || conversation.id}`,
+        );
+      } else {
+        console.log(
+          `ℹ️ Aucune conversation privée existante entre ${participant1} et ${participant2}`,
+        );
+      }
+
+      return conversation;
+    } catch (error) {
+      console.error(`❌ Erreur findPrivateConversation:`, {
+        error: error.message,
+        participant1,
+        participant2,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ INCRÉMENTER LE COMPTEUR DE MESSAGES D'UNE DIFFUSION BROADCAST
+   * Incrémente broadcastMetadata.totalMessagesSent de 1
+   * @param {string} broadcastConversationId - ID de la conversation broadcast
+   * @returns {Promise<object|null>} La conversation mise à jour
+   */
+  async incrementBroadcastMessageCount(broadcastConversationId) {
+    try {
+      console.log(
+        `📊 Incrémentation compteur messages broadcast: ${broadcastConversationId}`,
+      );
+
+      const updatedConversation = await Conversation.findByIdAndUpdate(
+        broadcastConversationId,
+        {
+          $inc: { "broadcastMetadata.totalMessagesSent": 1 },
+          $set: {
+            "broadcastMetadata.lastBroadcastAt": new Date(),
+            updatedAt: new Date(),
+          },
+        },
+        { new: true, runValidators: false },
+      );
+
+      if (updatedConversation) {
+        console.log(
+          `✅ Compteur broadcast incrémenté: ${broadcastConversationId} → ${updatedConversation.broadcastMetadata?.totalMessagesSent || 0}`,
+        );
+      } else {
+        console.warn(
+          `⚠️ Conversation broadcast ${broadcastConversationId} non trouvée pour incrément`,
+        );
+      }
+
+      return updatedConversation;
+    } catch (error) {
+      console.error(`❌ Erreur incrementBroadcastMessageCount:`, {
+        error: error.message,
+        broadcastConversationId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ METTRE À JOUR LES MÉTADONNÉES D'UNE DIFFUSION BROADCAST
+   * Ajoute/met à jour le mapping destinataire → conversation privée dans broadcastMetadata
+   * @param {string} broadcastConversationId - ID de la conversation broadcast
+   * @param {Array<{recipientId: string, conversationId: string}>} privateConversationEntries - Mapping à ajouter
+   * @returns {Promise<object|null>} La conversation mise à jour
+   */
+  async updateBroadcastMetadata(
+    broadcastConversationId,
+    privateConversationEntries,
+  ) {
+    try {
+      console.log(`📝 Mise à jour broadcastMetadata:`, {
+        broadcastConversationId,
+        entriesCount: privateConversationEntries?.length || 0,
+      });
+
+      if (
+        !privateConversationEntries ||
+        privateConversationEntries.length === 0
+      ) {
+        console.warn(`⚠️ Aucune entrée à ajouter dans broadcastMetadata`);
+        return null;
+      }
+
+      // Récupérer la conversation pour vérifier le type
+      const conversation = await Conversation.findById(broadcastConversationId);
+
+      if (!conversation) {
+        throw new Error(
+          `Conversation broadcast ${broadcastConversationId} introuvable`,
+        );
+      }
+
+      if (conversation.type !== "BROADCAST") {
+        throw new Error(
+          `La conversation ${broadcastConversationId} n'est pas de type BROADCAST`,
+        );
+      }
+
+      // Initialiser broadcastMetadata si nécessaire
+      if (!conversation.broadcastMetadata) {
+        conversation.broadcastMetadata = {
+          privateConversations: [],
+          totalRecipients: 0,
+          totalMessagesSent: 0,
+          lastBroadcastAt: null,
+        };
+      }
+
+      // Fusionner les nouvelles entrées avec les existantes (éviter les doublons)
+      const existingMap = new Map(
+        (conversation.broadcastMetadata.privateConversations || []).map(
+          (entry) => [entry.recipientId, entry.conversationId],
+        ),
+      );
+
+      // Ajouter les nouvelles entrées
+      privateConversationEntries.forEach((entry) => {
+        existingMap.set(entry.recipientId, entry.conversationId);
+      });
+
+      // Reconstruire le tableau
+      conversation.broadcastMetadata.privateConversations = Array.from(
+        existingMap.entries(),
+      ).map(([recipientId, conversationId]) => ({
+        recipientId,
+        conversationId,
+      }));
+
+      // Mettre à jour totalRecipients
+      conversation.broadcastMetadata.totalRecipients =
+        conversation.broadcastMetadata.privateConversations.length;
+
+      // Sauvegarder
+      await conversation.save();
+
+      console.log(`✅ broadcastMetadata mis à jour:`, {
+        broadcastConversationId,
+        totalPrivateConversations:
+          conversation.broadcastMetadata.privateConversations.length,
+        totalRecipients: conversation.broadcastMetadata.totalRecipients,
+      });
+
+      return conversation.toObject();
+    } catch (error) {
+      console.error(`❌ Erreur updateBroadcastMetadata:`, {
+        error: error.message,
+        broadcastConversationId,
+        entriesCount: privateConversationEntries?.length || 0,
+      });
+      throw error;
     }
   }
 }

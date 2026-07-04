@@ -1326,8 +1326,7 @@ class ChatHandler {
             let result;
             try {
               result = await this.sendMessageUseCase.execute({
-                content:
-                  callType === "VIDEO" ? "📹 Appel vidéo" : "📞 Appel audio",
+                content: "",
                 senderId: userId,
                 conversationId: conversationId
                   ? this.normalizeMongoId(conversationId)
@@ -1374,6 +1373,7 @@ class ChatHandler {
                 messageId,
                 callType,
                 conversationId: result.conversation.id,
+                callerId: userId,
                 caller: {
                   userId,
                   matricule: socket.matricule,

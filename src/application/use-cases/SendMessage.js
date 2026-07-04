@@ -355,13 +355,32 @@ class SendMessage {
         }
       }
 
+      // ✅ FIX : Guard anti-confusion receiverId == senderId
+      // Si le frontend ou le handler envoie accidentellement receiverId = senderId,
+      // on le résout via les participants de la conversation.
+      let resolvedReceiverId = receiverId;
+      if (
+        resolvedReceiverId &&
+        String(resolvedReceiverId) === String(senderId)
+      ) {
+        console.warn(
+          `⚠️ [SendMessage] receiverId (${resolvedReceiverId}) === senderId (${senderId}) — ` +
+            `résolution automatique via participants de la conversation.`,
+        );
+        resolvedReceiverId =
+          conversation.participants.find(
+            (p) => String(p) !== String(senderId),
+          ) || null;
+        console.log(`   ✅ receiverId corrigé: ${resolvedReceiverId}`);
+      }
+
       // ✅ CRÉER LE MESSAGE
       const message = {
         conversationId: conversation._id || conversation.id,
         senderId,
         // ✅ ASSURER QUE receiverId EST TOUJOURS UNE STRING
         receiverId: String(
-          receiverId ||
+          resolvedReceiverId ||
             conversation.participants.find(
               (p) => String(p) !== String(senderId),
             ) ||
